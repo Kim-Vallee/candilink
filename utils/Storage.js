@@ -1,4 +1,4 @@
-const { app } = require('@electron/remote')
+const { app } = require('@electron/remote');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,7 +10,6 @@ class Store {
         const userDataPath = app.getPath('userData');
         // We'll use the `configName` property to set the file name and path.join to bring it all together as a string
         this.path = path.join(userDataPath, 'preferences.json');
-        console.log(this.path)
 
         this.data = parseDataFile(this.path, {
             "email": "",

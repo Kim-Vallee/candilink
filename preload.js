@@ -1,7 +1,6 @@
-const {Builder, By, Options, until} = require('selenium-webdriver');
+const {Builder, By, until} = require('selenium-webdriver');
 const chrome = require('selenium-webdriver/chrome');
 const path = require("path");
-const fs = require("fs");
 const Store = require(path.join(__dirname, "utils", "Storage"));
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
@@ -16,6 +15,7 @@ let mailInput;
 let candilinkButton;
 let candilinkInput;
 let departements = [];
+let timerIntervalId = null;
 
 let buttonsLoadingContent = {};
 
@@ -33,8 +33,6 @@ const changeButtonStatus = (buttonId) => {
         buttonElement.innerHTML = spinnerHTML;
     }
 }
-
-let timerIntervalId = null;
 
 const fillTime = (time) => {
     if (time === 0) {
@@ -73,9 +71,14 @@ async function sendMail(event) {
 
     let mail = mailInput.value;
     let options = new chrome.Options();
-    options.headless();
-    let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
+    // options.headless();
+    options.setChromeBinaryPath(path.join(__dirname, "GoogleChromePortable", "GoogleChromePortable.exe"));
+    options.addArguments('--no-sandbox', '--no-default-browser-check', '--no-first-run',
+                              '--disable-gpu', '--disable-extensions', '--disable-default-apps');
 
+    console.log("Wait for browser ...");
+    let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
+    console.log("Browser loaded");
     try {
         // options.setChromeBinaryPath(path.join(__dirname, "GoogleChromePortable", "GoogleChromePortable.exe"));
 
@@ -172,11 +175,7 @@ const updateDepartements = async (driver) => {
         }
     } else {
         // First exclude the departements that are not in the list
-        for (const departement of departements) {
-            if (!new_departements.contains(departement)) {
-                departements.slice(departements.indexOf(departement), 1);
-            }
-        }
+        departements = departements.filter(dep => !new_departements.contains(dep))
 
         // Then add non-existing departements
         for (const newDepartement of new_departements) {
@@ -251,23 +250,15 @@ const loadPreferences = () => {
 
 }
 
-const checkBoxStorageDefault = (event) => {
-    if (event.target.checked) {
-        storage.set(event.target.id, true);
-    } else {
-        storage.set(event.target.id, false);
-    }
-}
-
 window.addEventListener('DOMContentLoaded', ()=> {
 
     saveMailCheckbox = document.getElementById("save-mail");
     candilinkButton = document.getElementById('btn-candilink');
     candilinkInput = document.getElementById("candilink");
     mailInput = document.getElementById('email');
-    let sendMailCheckbox = document.getElementById('send-mail');
-    let startupSendCheckbox = document.getElementById('startup-send');
     let savePrefCheckbox = document.getElementById('save-pref');
+
+    loadPreferences();
 
     if (savePrefCheckbox.checked) {
         let storedDepartements = storage.get("departements");
@@ -278,31 +269,39 @@ window.addEventListener('DOMContentLoaded', ()=> {
         }
     }
 
-    loadPreferences();
-
     // Buttons
 
     document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
 
     document.getElementById('send-mail').addEventListener('click', sendMail);
 
-    // Checkboxes
+    window.addEventListener("beforeunload", () => {
+        let saveMailCheckbox = document.getElementById('save-mail');
+        let sendMailOnStartupCheckbox = document.getElementById('startup-send');
+        let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
+        let appStartCheckbox = document.getElementById('app-on-startup');
 
-    saveMailCheckbox.addEventListener('click', (event) => {
-        if (event.target.checked) {
-            storage.set("email", document.getElementById('email').value);
-        } else {
-            storage.set("email", "");
+        let saveMailInput = document.getElementById('email');
+
+        const storeValueCheckbox = (element) => {
+            storage.set(element.id, element.checked);
         }
-        storage.set("send-mail", event.target.checked);
-    });
 
-    sendMailCheckbox.addEventListener('click', checkBoxStorageDefault);
+        storeValueCheckbox(saveMailCheckbox);
+        storeValueCheckbox(sendMailOnStartupCheckbox);
+        storeValueCheckbox(saveDepartementsPrefCheckbox);
+        storeValueCheckbox(appStartCheckbox);
 
-    startupSendCheckbox.addEventListener('click', checkBoxStorageDefault);
+        if (saveMailCheckbox.checked) {
+            storage.set(saveMailInput.id, saveMailInput.value)
+        } else {
+            storage.set(saveMailInput.id, "")
+        }
 
-    savePrefCheckbox.addEventListener('click', (event) => {
-        checkBoxStorageDefault(event);
-    });
-
+        if (saveDepartementsPrefCheckbox.checked) {
+            storage.set("departements", departements);
+        } else {
+            storage.set("departements", []);
+        }
+    })
 })
