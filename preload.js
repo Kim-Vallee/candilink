@@ -17,19 +17,19 @@ let candilinkInput;
 let departements = [];
 let timerIntervalId = null;
 
-let buttonsLoadingContent = {};
+let buttonsLoadingContents = {};
 
 const sleep = (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 const changeButtonStatus = (buttonId) => {
-    if (buttonsLoadingContent.hasOwnProperty(buttonId)) {
-        document.getElementById(buttonId).innerHTML = buttonsLoadingContent[buttonId];
-        buttonsLoadingContent.remove(buttonId);
+    if (buttonsLoadingContents.hasOwnProperty(buttonId)) {
+        document.getElementById(buttonId).innerHTML = buttonsLoadingContents[buttonId];
+        delete buttonsLoadingContents[buttonId];
     } else {
         let buttonElement = document.getElementById(buttonId);
-        buttonsLoadingContent[buttonId] = buttonElement.innerHTML;
+        buttonsLoadingContents[buttonId] = buttonElement.innerHTML;
         buttonElement.innerHTML = spinnerHTML;
     }
 }
@@ -56,9 +56,17 @@ const popUp = (message, type) => {
     alertPlaceholder.append(wrapper);
 }
 
+const loadDriver = () => {
+    let options = new firefox.Options();
+    options.headless()
+    // The trick with `Firefo${process.arch}` is that process.arch => x64, and the x will be used to complete firefox...
+    options.setBinary(path.join(__dirname, 'FirefoxPortable', 'App', `Firefo${process.arch}`, 'firefox.exe'));
+    return new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+}
+
 async function sendMail(event) {
 
-    if (buttonsLoadingContent.hasOwnProperty(event.target.id)) {
+    if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
         popUp("Veuillez attendre la fin du chargement avant de cliquer à nouveau sur le bouton", "warning");
         return;
     }
@@ -69,12 +77,10 @@ async function sendMail(event) {
         storage.set("email", mailInput.value);
     }
 
-    let options = new firefox.Options();
-    options.headless()
-    options.setBinary('C:\\Users\\Dana\\Downloads\\FirefoxPortable\\App\\Firefox64\\firefox.exe');
-
     let mail = mailInput.value;
-    let driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+
+    let driver = await loadDriver();
+
     try {
         driver.get("https://beta.interieur.gouv.fr/candilib/candidat-presignup");
 
@@ -169,11 +175,11 @@ const updateDepartements = async (driver) => {
         }
     } else {
         // First exclude the departements that are not in the list
-        departements = departements.filter(dep => !new_departements.contains(dep))
+        departements = departements.filter(dep => new_departements.includes(dep))
 
         // Then add non-existing departements
         for (const newDepartement of new_departements) {
-            if (!departements.contains(newDepartement)){
+            if (!departements.includes(newDepartement)){
                 departements.push(newDepartement);
             }
         }
@@ -193,17 +199,15 @@ const updateDepartements = async (driver) => {
 
 async function candilinkclick(event) {
 
-    if (buttonsLoadingContent.hasOwnProperty(event.target.id)) {
+    if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
         popUp("Veuillez attendre la fin du chargement avant de cliquer à nouveau sur le bouton", "warning");
         return;
     }
 
     changeButtonStatus(event.target.id)
 
-    let options = new chrome.Options();
-    options.headless();
     let link = candilinkInput.value;
-    let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
+    let driver = await loadDriver();
     driver.get(link);
 
     let base_link = "https://beta.interieur.gouv.fr/candilib/candidat/%/selection/selection-centre";
@@ -268,34 +272,39 @@ window.addEventListener('DOMContentLoaded', ()=> {
     document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
 
     document.getElementById('send-mail').addEventListener('click', sendMail);
+})
 
-    window.addEventListener("beforeunload", () => {
-        let saveMailCheckbox = document.getElementById('save-mail');
-        let sendMailOnStartupCheckbox = document.getElementById('startup-send');
-        let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
-        let appStartCheckbox = document.getElementById('app-on-startup');
+window.addEventListener("beforeunload", () => {
+    let saveMailCheckbox = document.getElementById('save-mail');
+    let sendMailOnStartupCheckbox = document.getElementById('startup-send');
+    let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
+    let appStartCheckbox = document.getElementById('app-on-startup');
 
-        let saveMailInput = document.getElementById('email');
+    let saveMailInput = document.getElementById('email');
 
-        const storeValueCheckbox = (element) => {
-            storage.set(element.id, element.checked);
+    const storeValueCheckbox = (element) => {
+        storage.set(element.id, element.checked);
+    }
+
+    storeValueCheckbox(saveMailCheckbox);
+    storeValueCheckbox(sendMailOnStartupCheckbox);
+    storeValueCheckbox(saveDepartementsPrefCheckbox);
+    storeValueCheckbox(appStartCheckbox);
+
+    if (saveMailCheckbox.checked) {
+        storage.set(saveMailInput.id, saveMailInput.value)
+    } else {
+        storage.set(saveMailInput.id, "")
+    }
+
+    if (saveDepartementsPrefCheckbox.checked) {
+        let departementsHTML = document.getElementById('sortable');
+        let savedDepartements = [];
+        for (let element of departementsHTML.children) {
+            savedDepartements.push(element.innerText);
         }
-
-        storeValueCheckbox(saveMailCheckbox);
-        storeValueCheckbox(sendMailOnStartupCheckbox);
-        storeValueCheckbox(saveDepartementsPrefCheckbox);
-        storeValueCheckbox(appStartCheckbox);
-
-        if (saveMailCheckbox.checked) {
-            storage.set(saveMailInput.id, saveMailInput.value)
-        } else {
-            storage.set(saveMailInput.id, "")
-        }
-
-        if (saveDepartementsPrefCheckbox.checked) {
-            storage.set("departements", departements);
-        } else {
-            storage.set("departements", []);
-        }
-    })
+        storage.set("departements", savedDepartements);
+    } else {
+        storage.set("departements", []);
+    }
 })
