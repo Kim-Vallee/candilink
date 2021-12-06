@@ -1,5 +1,5 @@
 const {Builder, By, until} = require('selenium-webdriver');
-const chrome = require('selenium-webdriver/chrome');
+const firefox = require('selenium-webdriver/firefox');
 const path = require("path");
 const Store = require(path.join(__dirname, "utils", "Storage"));
 
@@ -69,19 +69,13 @@ async function sendMail(event) {
         storage.set("email", mailInput.value);
     }
 
+    let options = new firefox.Options();
+    options.headless()
+    options.setBinary('C:\\Users\\Dana\\Downloads\\FirefoxPortable\\App\\Firefox64\\firefox.exe');
+
     let mail = mailInput.value;
-    let options = new chrome.Options();
-    // options.headless();
-    options.setChromeBinaryPath(path.join(__dirname, "GoogleChromePortable", "GoogleChromePortable.exe"));
-    options.addArguments('--no-sandbox', '--no-default-browser-check', '--no-first-run',
-                              '--disable-gpu', '--disable-extensions', '--disable-default-apps');
-
-    console.log("Wait for browser ...");
-    let driver = await new Builder().forBrowser('chrome').setChromeOptions(options).build();
-    console.log("Browser loaded");
+    let driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
     try {
-        // options.setChromeBinaryPath(path.join(__dirname, "GoogleChromePortable", "GoogleChromePortable.exe"));
-
         driver.get("https://beta.interieur.gouv.fr/candilib/candidat-presignup");
 
         driver.wait(until.elementLocated(By.css('button[tabindex="8"]'))).click();
