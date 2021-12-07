@@ -2,6 +2,7 @@ const {Builder, By, until} = require('selenium-webdriver');
 const firefox = require('selenium-webdriver/firefox');
 const path = require("path");
 const Store = require(path.join(__dirname, "utils", "Storage"));
+const open = require('open');
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -16,6 +17,8 @@ let candilinkButton;
 let candilinkInput;
 let departements = [];
 let timerIntervalId = null;
+let year = new Date().getFullYear();
+let month = new Date().getMonth();
 
 let buttonsLoadingContents = {};
 
@@ -61,7 +64,8 @@ const loadDriver = () => {
     options.headless()
     // The trick with `Firefo${process.arch}` is that process.arch => x64, and the x will be used to complete firefox...
     options.setBinary(path.join(__dirname, 'FirefoxPortable', 'App', `Firefo${process.arch}`, 'firefox.exe'));
-    return new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+    let driver = new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+    return driver;
 }
 
 async function sendMail(event) {
@@ -124,8 +128,6 @@ const createCountdown = (allowed_time) => {
     let hour = allowed_time.split("H")[0], minute = allowed_time.split("H")[1];
 
     let now = new Date();
-    // TODO: remove this in prod (assuming it is 10am with varying seconds)
-    // now = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0, now.getSeconds());
 
     let passingTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(hour), Number(minute), 0);
 
@@ -140,6 +142,41 @@ const createCountdown = (allowed_time) => {
         h = Math.floor(h%24);
 
         document.getElementById("countdown").innerHTML = fillTime(h) + ":" + fillTime(m) + ":" + fillTime(s);
+    } else {
+        document.getElementById("countdown").innerHTML = "00:00:00";
+        getInformationCandilib();
+    }
+}
+
+const getInformationCandilib = async () => {
+    let emptyLink = "https://beta.interieur.gouv.fr/candilib/candidat/%/selection/selection-centre";
+    let departementsOrder = getDepartementsFromHTML();
+    let driver = loadDriver();
+    let browserOpened = false;
+
+    for (let depNumber of departementsOrder) {
+        let departementLink = emptyLink.replace("%", depNumber);
+        driver.get(departementLink);
+
+        // FIXME: Not working !!!!
+        let elements = await driver.wait(until.elementsLocated(By.css(".v-card__text .v-list-item__content")));
+
+        for (let el of elements) {
+            if ( !el.innerHTML.includes("Plus de place disponible pour le moment") ) {
+                alert("Maybe place found !");
+                if (!browserOpened) {
+                    await el.click();
+                    browserOpened = true;
+                    open(driver.getCurrentUrl());
+                    driver.get(departementLink);
+                    await driver.wait(until.elementsLocated(By.css("div[role=list] .v-list-item__content")));
+                }
+            }
+        }
+    }
+
+    if (!browserOpened) {
+        popUp("Aucune place disponible... Il faudra reessayer demain !", "danger");
     }
 }
 
@@ -226,7 +263,8 @@ async function candilinkclick(event) {
     // TODO: implement town sort selection
 
     if (timerIntervalId === null) {
-        popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning")
+        popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning");
+        getInformationCandilib();
     }
 
     driver.quit()
@@ -246,6 +284,15 @@ const loadPreferences = () => {
 
     mailInput.value = storage.get("email");
 
+}
+
+const getDepartementsFromHTML = () => {
+    let departementsHTML = document.getElementById('sortable');
+    let savedDepartements = [];
+    for (let element of departementsHTML.children) {
+        savedDepartements.push(element.innerText);
+    }
+    return savedDepartements;
 }
 
 window.addEventListener('DOMContentLoaded', ()=> {
@@ -298,11 +345,7 @@ window.addEventListener("beforeunload", () => {
     }
 
     if (saveDepartementsPrefCheckbox.checked) {
-        let departementsHTML = document.getElementById('sortable');
-        let savedDepartements = [];
-        for (let element of departementsHTML.children) {
-            savedDepartements.push(element.innerText);
-        }
+        let savedDepartements = getDepartementsFromHTML();
         storage.set("departements", savedDepartements);
     } else {
         storage.set("departements", []);
