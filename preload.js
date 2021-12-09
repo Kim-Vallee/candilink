@@ -19,6 +19,7 @@ let departements = [];
 let timerIntervalId = null;
 let year = new Date().getFullYear();
 let month = new Date().getMonth();
+let driver = null;
 
 let buttonsLoadingContents = {};
 
@@ -60,11 +61,13 @@ const popUp = (message, type) => {
 }
 
 const loadDriver = () => {
-    let options = new firefox.Options();
-    options.headless()
-    // The trick with `Firefo${process.arch}` is that process.arch => x64, and the x will be used to complete firefox...
-    options.setBinary(path.join(__dirname, 'FirefoxPortable', 'App', `Firefo${process.arch}`, 'firefox.exe'));
-    let driver = new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+    if (driver === null) {
+        let options = new firefox.Options();
+        options.headless()
+        // The trick with `Firefo${process.arch}` is that process.arch => x64, and the x will be used to complete firefox...
+        options.setBinary(path.join(__dirname, 'FirefoxPortable', 'App', `Firefo${process.arch}`, 'firefox.exe'));
+        driver = new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
+    }
     return driver;
 }
 
@@ -95,8 +98,6 @@ async function sendMail(event) {
     } catch {
         popUp('Le mail n\'a pas pu être envoyé, veuillez relancer l\'application ou me contacter', 'danger');
     }
-
-    await driver.quit();
 
     changeButtonStatus(event.target.id);
 }
@@ -158,12 +159,15 @@ const getInformationCandilib = async () => {
         let departementLink = emptyLink.replace("%", depNumber);
         driver.get(departementLink);
 
-        // FIXME: Not working !!!!
         let elements = await driver.wait(until.elementsLocated(By.css(".v-card__text .v-list-item__content")));
+        console.log(elements);
 
         for (let el of elements) {
-            if ( !el.innerHTML.includes("Plus de place disponible pour le moment") ) {
-                alert("Maybe place found !");
+            let inside_text = await el.getText();
+            if ( !inside_text.includes("Plus de place disponible pour le moment") ) {
+                let splitted = inside_text.split("\n");
+                let city = splitted[0], address = splitted[1], availability = splitted[2];
+                alert(`Une place à peut-être été trouvée à ${city} (${address}) : ${availability}`);
                 if (!browserOpened) {
                     await el.click();
                     browserOpened = true;
@@ -258,16 +262,10 @@ async function candilinkclick(event) {
 
     await updateDepartements(driver);
 
-    // TODO: Update application's list
-
-    // TODO: implement town sort selection
-
     if (timerIntervalId === null) {
         popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning");
         getInformationCandilib();
     }
-
-    driver.quit()
 
     changeButtonStatus(event.target.id);
 }
@@ -322,6 +320,8 @@ window.addEventListener('DOMContentLoaded', ()=> {
 })
 
 window.addEventListener("beforeunload", () => {
+    driver.quit()
+
     let saveMailCheckbox = document.getElementById('save-mail');
     let sendMailOnStartupCheckbox = document.getElementById('startup-send');
     let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
