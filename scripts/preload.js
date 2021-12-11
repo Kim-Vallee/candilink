@@ -3,7 +3,7 @@ const path = require("path");
 const { app } = require('@electron/remote');
 const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
 const open = require('open');
-
+const axios = require('axios');
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -18,6 +18,9 @@ let userStorage = new Store('user-preferences', {
         "app-on-startup": true
 });
 
+// FIXME: Remove this line when not used anymore
+let driver = null;
+
 // Useful elements
 let saveMailCheckbox;
 let mailInput;
@@ -27,7 +30,6 @@ let departements = [];
 let timerIntervalId = null;
 let year = new Date().getFullYear();
 let month = new Date().getMonth();
-let driver = null;
 
 let buttonsLoadingContents = {};
 
@@ -73,22 +75,25 @@ async function sendMail(event) {
 
     changeButtonStatus(event.target.id);
 
-    if (saveMailCheckbox.checked) {
-        userStorage.set("email", mailInput.value);
-    }
-
     let mail = mailInput.value;
 
-    try {
-        driver.get("https://beta.interieur.gouv.fr/candilib/candidat-presignup");
+    const data = { "email": mail }
 
-        driver.wait(until.elementLocated(By.css('button[tabindex="8"]'))).click();
-        driver.wait(until.elementLocated(By.id("input-73"))).sendKeys(mail);
-        await driver.wait(until.elementLocated(By.css("button[type=submit].t-magic-link-button-"))).click();
-        popUp('Le mail a correctement été envoyé, vérifiez votre boite mail !', 'success');
-    } catch {
-        popUp('Le mail n\'a pas pu être envoyé, veuillez relancer l\'application ou me contacter', 'danger');
-    }
+    await (async () => {
+        try {
+            const res = await axios.post('https://beta.interieur.gouv.fr/candilib/api/v2/auth/candidat/magic-link',
+                                         data);
+            console.log(`Status: ${res.status}`);
+            console.log('Body: ', res.data);
+            if (res.data.success) {
+                popUp("Email correctement envoyé, veuillez vérifier votre boite mail.", "success");
+            } else {
+                popUp(`L'email n'a pas pu être envoyé : ${res.data.message}`, 'danger');
+            }
+        } catch (err) {
+            popUp(`L'email n'a pas pu être envoyé : ${err}`, 'danger');
+        }
+    })
 
     changeButtonStatus(event.target.id);
 }
@@ -337,8 +342,6 @@ window.addEventListener('DOMContentLoaded', ()=> {
 })
 
 window.addEventListener("beforeunload", () => {
-    driver.quit()
-
     let saveMailCheckbox = document.getElementById('save-mail');
     let sendMailOnStartupCheckbox = document.getElementById('startup-send');
     let saveDepartementsPrefCheckbox = document.getElementById('save-pref');

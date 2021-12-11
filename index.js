@@ -21,7 +21,7 @@ const createWindow = () => {
     win.removeMenu();
 
     // TODO: Remove in prod
-    // win.webContents.openDevTools();
+    win.webContents.openDevTools();
 
     win.loadFile(path.join("src", "index.html"));
 }
