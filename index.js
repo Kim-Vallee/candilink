@@ -4,25 +4,26 @@ require('@electron/remote/main').initialize();
 
 require('electron-reload')(__dirname);
 
+
 const createWindow = () => {
     const win = new BrowserWindow({
         width:800,
         height:600,
         webPreferences: {
             enableRemoteModule: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'scripts', 'preload.js')
         }
     })
 
     require('@electron/remote/main').enable(win.webContents);
 
-    win.setResizable(false)
-    win.removeMenu()
+    // win.setResizable(false);
+    win.removeMenu();
 
     // TODO: Remove in prod
-    win.webContents.openDevTools()
+    // win.webContents.openDevTools();
 
-    win.loadFile("index.html")
+    win.loadFile(path.join("src", "index.html"));
 }
 
 app.whenReady().then(() => {

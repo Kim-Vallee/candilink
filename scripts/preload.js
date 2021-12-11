@@ -1,14 +1,22 @@
 const {Builder, By, until} = require('selenium-webdriver');
-const firefox = require('selenium-webdriver/firefox');
 const path = require("path");
-const Store = require(path.join(__dirname, "utils", "Storage"));
+const { app } = require('@electron/remote');
+const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
 const open = require('open');
+
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
     "</div>";
 
-let storage = new Store();
+let userStorage = new Store('user-preferences', {
+        "email": "",
+        "departements": [],
+        "save-mail": true,
+        "startup-send": true,
+        "save-pref": true,
+        "app-on-startup": true
+});
 
 // Useful elements
 let saveMailCheckbox;
@@ -22,10 +30,6 @@ let month = new Date().getMonth();
 let driver = null;
 
 let buttonsLoadingContents = {};
-
-const sleep = (ms) => {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 const changeButtonStatus = (buttonId) => {
     if (buttonsLoadingContents.hasOwnProperty(buttonId)) {
@@ -60,17 +64,6 @@ const popUp = (message, type) => {
     alertPlaceholder.append(wrapper);
 }
 
-const loadDriver = () => {
-    if (driver === null) {
-        let options = new firefox.Options();
-        options.headless()
-        // The trick with `Firefo${process.arch}` is that process.arch => x64, and the x will be used to complete firefox...
-        options.setBinary(path.join(__dirname, 'FirefoxPortable', 'App', `Firefo${process.arch}`, 'firefox.exe'));
-        driver = new Builder().forBrowser('firefox').setFirefoxOptions(options).build();
-    }
-    return driver;
-}
-
 async function sendMail(event) {
 
     if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
@@ -81,12 +74,10 @@ async function sendMail(event) {
     changeButtonStatus(event.target.id);
 
     if (saveMailCheckbox.checked) {
-        storage.set("email", mailInput.value);
+        userStorage.set("email", mailInput.value);
     }
 
     let mail = mailInput.value;
-
-    let driver = await loadDriver();
 
     try {
         driver.get("https://beta.interieur.gouv.fr/candilib/candidat-presignup");
@@ -152,7 +143,6 @@ const createCountdown = (allowed_time) => {
 const getInformationCandilib = async () => {
     let emptyLink = "https://beta.interieur.gouv.fr/candilib/candidat/%/selection/selection-centre";
     let departementsOrder = getDepartementsFromHTML();
-    let driver = loadDriver();
     let browserOpened = false;
 
     for (let depNumber of departementsOrder) {
@@ -160,7 +150,6 @@ const getInformationCandilib = async () => {
         driver.get(departementLink);
 
         let elements = await driver.wait(until.elementsLocated(By.css(".v-card__text .v-list-item__content")));
-        console.log(elements);
 
         for (let el of elements) {
             let inside_text = await el.getText();
@@ -248,10 +237,7 @@ async function candilinkclick(event) {
     changeButtonStatus(event.target.id)
 
     let link = candilinkInput.value;
-    let driver = await loadDriver();
     driver.get(link);
-
-    let base_link = "https://beta.interieur.gouv.fr/candilib/candidat/%/selection/selection-centre";
 
     if (timerIntervalId !== null){
         clearInterval(timerIntervalId);
@@ -275,12 +261,12 @@ const loadPreferences = () => {
     let inputs = preferenceTable.querySelectorAll("tr>td>input");
 
     for (let el of inputs) {
-        if (storage.get(el.id)) {
+        if (userStorage.get(el.id)) {
             el.checked = true;
         }
     }
 
-    mailInput.value = storage.get("email");
+    mailInput.value = userStorage.get("email");
 
 }
 
@@ -293,7 +279,38 @@ const getDepartementsFromHTML = () => {
     return savedDepartements;
 }
 
+// const prepareBrowser = () => {
+//     const acceptedBrowsers = ['chrome', 'chromium', 'firefox', 'edge', 'ie', 'safari', 'opera'];
+//
+//     if (!browser || !acceptedBrowsers.includes(browser.name) ) {
+//         popUp("No supported browser detected, please contact the creator of this app.", "error");
+//     }
+//
+//     const webDriverSpecific = require('selenium-webdriver/' + browser.name);
+//
+//     let service = new webDriverSpecific.ServiceBuilder('driver').build();
+//
+//     let options = new webDriverSpecific.Options();
+//     options.headless()
+//     driver = new Builder().forBrowser(browser.name)
+//         .setFirefoxOptions(options)
+//         .setChromeOptions(options)
+//         .setOperaOptions(options)
+//         .setEdgeOptions(options)
+//         .setSafariOptions(options)
+//         .setIeOptions(options)
+//         .setFirefoxService(service)
+//         .setChromeService(service)
+//         .setOperaService(service)
+//         .setEdgeService(service)
+//         .setIeService(service)
+//         .build();
+// }
+
+
 window.addEventListener('DOMContentLoaded', ()=> {
+
+    // prepareBrowser();
 
     saveMailCheckbox = document.getElementById("save-mail");
     candilinkButton = document.getElementById('btn-candilink');
@@ -304,7 +321,7 @@ window.addEventListener('DOMContentLoaded', ()=> {
     loadPreferences();
 
     if (savePrefCheckbox.checked) {
-        let storedDepartements = storage.get("departements");
+        let storedDepartements = userStorage.get("departements");
         if (storedDepartements.length > 0) {
             for (const storedDepartement of storedDepartements) {
                 departements.push(storedDepartement);
@@ -330,7 +347,7 @@ window.addEventListener("beforeunload", () => {
     let saveMailInput = document.getElementById('email');
 
     const storeValueCheckbox = (element) => {
-        storage.set(element.id, element.checked);
+        userStorage.set(element.id, element.checked);
     }
 
     storeValueCheckbox(saveMailCheckbox);
@@ -339,15 +356,15 @@ window.addEventListener("beforeunload", () => {
     storeValueCheckbox(appStartCheckbox);
 
     if (saveMailCheckbox.checked) {
-        storage.set(saveMailInput.id, saveMailInput.value)
+        userStorage.set(saveMailInput.id, saveMailInput.value)
     } else {
-        storage.set(saveMailInput.id, "")
+        userStorage.set(saveMailInput.id, "")
     }
 
     if (saveDepartementsPrefCheckbox.checked) {
         let savedDepartements = getDepartementsFromHTML();
-        storage.set("departements", savedDepartements);
+        userStorage.set("departements", savedDepartements);
     } else {
-        storage.set("departements", []);
+        userStorage.set("departements", []);
     }
 })

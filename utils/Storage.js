@@ -1,24 +1,22 @@
-const { app } = require('@electron/remote');
+let app = require('electron').app;
+
+if (app == null){
+    app = require("@electron/remote").app;
+}
+
 const path = require('path');
 const fs = require('fs');
 
 class Store {
-    constructor() {
+    constructor(name, defaults) {
         // Renderer process has to get `app` module via `remote`, whereas the main process can get it directly
         // app.getPath('userData') will return a string of the user's app data directory path.
 
         const userDataPath = app.getPath('userData');
         // We'll use the `configName` property to set the file name and path.join to bring it all together as a string
-        this.path = path.join(userDataPath, 'preferences.json');
+        this.path = path.join(userDataPath, `${name}.json`);
 
-        this.data = parseDataFile(this.path, {
-            "email": "",
-            "departements": [],
-            "save-mail": true,
-            "startup-send": true,
-            "save-pref": true,
-            "app-on-startup": true
-        });
+        this.data = parseDataFile(this.path, defaults);
     }
 
     // This will just return the property on the `data` object
