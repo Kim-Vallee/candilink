@@ -4,6 +4,8 @@ const { app } = require('@electron/remote');
 const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
 const open = require('open');
 const axios = require('axios');
+const { v4: uuid } = require('uuid');
+const client_id = uuid() + ".2.12.1-beta1.";
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -30,6 +32,7 @@ let departements = [];
 let timerIntervalId = null;
 let year = new Date().getFullYear();
 let month = new Date().getMonth();
+let userid = null;
 
 let buttonsLoadingContents = {};
 
@@ -79,37 +82,23 @@ async function sendMail(event) {
 
     const data = { "email": mail }
 
-    await (async () => {
-        try {
-            const res = await axios.post('https://beta.interieur.gouv.fr/candilib/api/v2/auth/candidat/magic-link',
-                                         data);
-            console.log(`Status: ${res.status}`);
-            console.log('Body: ', res.data);
-            if (res.data.success) {
-                popUp("Email correctement envoyé, veuillez vérifier votre boite mail.", "success");
-            } else {
-                popUp(`L'email n'a pas pu être envoyé : ${res.data.message}`, 'danger');
-            }
-        } catch (err) {
-            popUp(`L'email n'a pas pu être envoyé : ${err}`, 'danger');
+    try {
+        const res = await axios.post('https://beta.interieur.gouv.fr/candilib/api/v2/auth/candidat/magic-link',
+                                     data);
+        if (res.data.success) {
+            popUp("Email correctement envoyé, veuillez vérifier votre boite mail.", "success");
+        } else {
+            popUp(`L'email n'a pas pu être envoyé : ${res.data.message}`, 'danger');
         }
-    })
+    } catch (err) {
+        popUp(`L'email n'a pas pu être envoyé : ${err}`, 'danger');
+    }
 
     changeButtonStatus(event.target.id);
 }
 
-const updateTime = async (driver) => {
-    let hour_selector = "i.v-icon.theme--light ~ span";
-
-    let time = driver.wait(until.elementLocated(By.css(hour_selector)));
-
-    let text_time = await time.getText();
-    let allowed_time = text_time.split(":")[1].trim();
-    document.getElementById("timer").innerHTML = allowed_time.replace("H", ':');
-
-    let id = null;
-
-    let hour = allowed_time.split("H")[0], minute = allowed_time.split("H")[1];
+const updateTime = (hour, minute) => {
+    document.getElementById('timer').innerHTML = hour + ":" + minute;
 
     let now = new Date();
     let passingTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(hour), Number(minute), 0);
@@ -117,13 +106,11 @@ const updateTime = async (driver) => {
     if ((passingTime - now) < 0) return null;
 
     return setInterval(() => {
-        createCountdown(allowed_time);
+        createCountdown(hour, minute);
     }, 500)
 }
 
-const createCountdown = (allowed_time) => {
-    let hour = allowed_time.split("H")[0], minute = allowed_time.split("H")[1];
-
+const createCountdown = (hour, minute) => {
     let now = new Date();
 
     let passingTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(hour), Number(minute), 0);
@@ -195,14 +182,7 @@ const updateHTMLDepartements = () => {
     }
 }
 
-const updateDepartements = async (driver) => {
-    let departmentsSelector = "strong.u-uppercase";
-    let new_departements = await driver.wait(until.elementsLocated(By.css(departmentsSelector)));
-
-    for (let i = 0; i < new_departements.length; i++) {
-        new_departements[i] = await new_departements[i].getText();
-    }
-
+const updateDepartements = (new_departements) => {
     // Update the old departements variable
     if (departements.length === 0) {
         for (let i = 0; i < new_departements.length; i++) {
@@ -232,6 +212,15 @@ const updateDepartements = async (driver) => {
 
 }
 
+const generateHeaders = (token) => {
+    return {
+        "X-USER-ID": userid,
+        "X-CLIENT-ID": client_id,
+        "X-REQUEST-ID": uuid(),
+        Authorization: 'Bearer ' + token
+    }
+}
+
 async function candilinkclick(event) {
 
     if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
@@ -242,16 +231,44 @@ async function candilinkclick(event) {
     changeButtonStatus(event.target.id)
 
     let link = candilinkInput.value;
-    driver.get(link);
+    let reToken = /token=.*/g;
+    let token = reToken.exec(link)[0].substr(6);
+
+    const value = await axios.get(link);
+
+    let getUserIdLink = 'https://beta.interieur.gouv.fr/candilib/api/v2/auth/candidat/verify-token?token=';
+
+    const verify_token = await axios.get(getUserIdLink + token, {headers: {
+        "X-CLIENT-ID": client_id,
+        "X-REQUEST-ID": uuid()
+    }})
+
+    userid = verify_token.headers['x-user-id'];
+
+    const me = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/me", {headers: generateHeaders(token)});
+
+    let time = me.data['candidat']['visibilityHour'].split('H');
+    let hour = time[0], minute = time[1];
+
+    const places = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/places",
+                            {headers: generateHeaders(token)});
+
+    const departementsRequest = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/departements",
+        {headers: generateHeaders(token)})
 
     if (timerIntervalId !== null){
         clearInterval(timerIntervalId);
         timerIntervalId = null;
     }
 
-    timerIntervalId = await updateTime(driver);
+    timerIntervalId = updateTime(hour, minute);
 
-    await updateDepartements(driver);
+    let new_departements = departementsRequest.data['geoDepartementsInfos'];
+    for (let i = 0; i < new_departements.length; i++) {
+        new_departements[i] = new_departements[i]['geoDepartement'];
+    }
+
+    updateDepartements(new_departements);
 
     if (timerIntervalId === null) {
         popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning");
@@ -284,39 +301,8 @@ const getDepartementsFromHTML = () => {
     return savedDepartements;
 }
 
-// const prepareBrowser = () => {
-//     const acceptedBrowsers = ['chrome', 'chromium', 'firefox', 'edge', 'ie', 'safari', 'opera'];
-//
-//     if (!browser || !acceptedBrowsers.includes(browser.name) ) {
-//         popUp("No supported browser detected, please contact the creator of this app.", "error");
-//     }
-//
-//     const webDriverSpecific = require('selenium-webdriver/' + browser.name);
-//
-//     let service = new webDriverSpecific.ServiceBuilder('driver').build();
-//
-//     let options = new webDriverSpecific.Options();
-//     options.headless()
-//     driver = new Builder().forBrowser(browser.name)
-//         .setFirefoxOptions(options)
-//         .setChromeOptions(options)
-//         .setOperaOptions(options)
-//         .setEdgeOptions(options)
-//         .setSafariOptions(options)
-//         .setIeOptions(options)
-//         .setFirefoxService(service)
-//         .setChromeService(service)
-//         .setOperaService(service)
-//         .setEdgeService(service)
-//         .setIeService(service)
-//         .build();
-// }
-
 
 window.addEventListener('DOMContentLoaded', ()=> {
-
-    // prepareBrowser();
-
     saveMailCheckbox = document.getElementById("save-mail");
     candilinkButton = document.getElementById('btn-candilink');
     candilinkInput = document.getElementById("candilink");
