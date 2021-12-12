@@ -6,6 +6,8 @@ const open = require('open');
 const axios = require('axios');
 const { v4: uuid } = require('uuid');
 const client_id = uuid() + ".2.12.1-beta1.";
+const { DateTime } = require('luxon');
+const FRENCH_TIME_ZONE = 'Europe/Paris';
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -31,8 +33,10 @@ let candilinkInput;
 let departements = [];
 let timerIntervalId = null;
 let year = new Date().getFullYear();
-let month = new Date().getMonth();
+let month = new Intl.DateTimeFormat('en', { month: 'short' }).format(new Date());
+let day = new Intl.DateTimeFormat('en', { day: '2-digit' }).format(new Date());
 let userid = null;
+let token = null;
 
 let buttonsLoadingContents = {};
 
@@ -132,33 +136,40 @@ const createCountdown = (hour, minute) => {
     }
 }
 
+console.log(DateTime.local().setLocale('fr').setZone(FRENCH_TIME_ZONE))
+
 const getInformationCandilib = async () => {
-    let emptyLink = "https://beta.interieur.gouv.fr/candilib/candidat/%/selection/selection-centre";
+    // TODO: Update this to work with axios
+    let emptyLink = "https://beta.interieur.gouv.fr/candilib/api/v2/candidat/centres?departement=";
+
+    let currentTime = DateTime.local().setLocale('fr').setZone(FRENCH_TIME_ZONE);
+    let timePlusThreeMonth = currentTime.plus({'month': 3}).set({'hour': 23, 'minute': 59, 'second': 59, 'millisecond': 999});
+
+    const generateDateString = (datetime) => {
+        return `${datetime.c.year}-${datetime.c.month}-${datetime.c.day}T${datetime.c.hour}:${datetime.c.minute}:${datetime.c.second}.${datetime.c.millisecond}`
+    }
+
+    let generateLinkPlaces = (depNb, centreName) => {
+        return `https://beta.interieur.gouv.fr/candilib/api/v2/candidat/places?begin=${generateDateString(currentTime)}+01:00&end=${generateDateString(timePlusThreeMonth)}+02:00&geoDepartement=${depNb}&nomCentre=${centreName}`
+    }
+
     let departementsOrder = getDepartementsFromHTML();
-    let browserOpened = false;
 
-    for (let depNumber of departementsOrder) {
-        let departementLink = emptyLink.replace("%", depNumber);
-        driver.get(departementLink);
-
-        let elements = await driver.wait(until.elementsLocated(By.css(".v-card__text .v-list-item__content")));
-
-        for (let el of elements) {
-            let inside_text = await el.getText();
-            if ( !inside_text.includes("Plus de place disponible pour le moment") ) {
-                let splitted = inside_text.split("\n");
-                let city = splitted[0], address = splitted[1], availability = splitted[2];
-                alert(`Une place à peut-être été trouvée à ${city} (${address}) : ${availability}`);
-                if (!browserOpened) {
-                    await el.click();
-                    browserOpened = true;
-                    open(driver.getCurrentUrl());
-                    driver.get(departementLink);
-                    await driver.wait(until.elementsLocated(By.css("div[role=list] .v-list-item__content")));
-                }
+    for (const departementNumber of departementsOrder) {
+        let response = await axios.get(emptyLink + departementNumber, {headers: generateHeaders(token)});
+        for (const dataElement of response.data) {
+            if (dataElement['count'] != 0) {
+                popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
+            }
+            let list = (await axios.get(generateLinkPlaces(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']))).data;
+            if (list.length > 0) {
+                popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
+                console.log(list)
             }
         }
     }
+
+    let browserOpened = false;
 
     if (!browserOpened) {
         popUp("Aucune place disponible... Il faudra reessayer demain !", "danger");
@@ -232,7 +243,7 @@ async function candilinkclick(event) {
 
     let link = candilinkInput.value;
     let reToken = /token=.*/g;
-    let token = reToken.exec(link)[0].substr(6);
+    token = reToken.exec(link)[0].substr(6);
 
     const value = await axios.get(link);
 
