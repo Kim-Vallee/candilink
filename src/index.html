@@ -52,7 +52,10 @@
             </div>
             <div class="col-4 h-100 border border-dark">
                 <div class="row p-2 pb-0">
-                    <input type="text" id="email" placeholder="adresse@email.com"/>
+                    <input type="text" class="form-control" aria-describedby="emailValidation" id="email" placeholder="adresse@email.com"/>
+                    <div id="emailValidation" class="invalid-feedback">
+                        Veuillez mettre un email valide.
+                    </div>
                 </div>
                 <div class="row p-2">
                     <button class="btn btn-primary" id="send-mail">Envoyer un mail</button>

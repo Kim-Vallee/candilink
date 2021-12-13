@@ -2,12 +2,13 @@ const path = require("path");
 const { app } = require('@electron/remote');
 const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
 const { ipcRenderer } = require('electron');
-const open = require('open');
 const axios = require('axios');
 const { v4: uuid } = require('uuid');
 const client_id = uuid() + ".2.12.1-beta1.";
 const { DateTime } = require('luxon');
 const FRENCH_TIME_ZONE = 'Europe/Paris';
+const CANDILIB_BASE_URL = "https://beta.interieur.gouv.fr/candilib/candidat";
+const REGEX_VALIDATE_EMAIL = new RegExp("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\\\[\x01-\x09\x0b\x0c\x0e-\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\\])\n");
 
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
@@ -23,9 +24,6 @@ let userStorage = new Store('user-preferences', {
         "app-on-startup": true
 });
 
-// FIXME: Remove this line when not used anymore
-let driver = null;
-
 // Useful elements
 let saveMailCheckbox;
 let mailInput;
@@ -33,9 +31,6 @@ let candilinkButton;
 let candilinkInput;
 let departements = [];
 let timerIntervalId = null;
-let year = new Date().getFullYear();
-let month = new Intl.DateTimeFormat('en', { month: 'short' }).format(new Date());
-let day = new Intl.DateTimeFormat('en', { day: '2-digit' }).format(new Date());
 let userid = null;
 let token = null;
 
@@ -66,12 +61,29 @@ const popUp = (message, type) => {
     let alertPlaceholder = document.getElementById('liveAlertPlaceholder');
 
     let wrapper = document.createElement("div");
-    wrapper.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">` +
-        message +
-        '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
-        '</div>';
+    let divElement = document.createElement('div');
+    divElement.setAttribute('role', 'alert');
+    divElement.className = `alert alert-${type} alert-dismissible fade show`;
+    let textElement = document.createElement('span');
+    textElement.innerText = message;
+    let button = document.createElement('button');
+    button.setAttribute('type', 'button');
+    button.setAttribute('class', "btn-close");
+    button.setAttribute('data-bs-dismiss', 'alert');
+    button.setAttribute('aria-label', "Close");
 
-    alertPlaceholder.append(wrapper);
+    divElement.appendChild(textElement);
+    divElement.appendChild(button);
+    wrapper.appendChild(divElement);
+
+    alertPlaceholder.appendChild(wrapper);
+
+    // After a timeout the element disappear
+    setTimeout(() => {
+        if (button) {
+            button.click();
+        }
+    }, 2000)
 }
 
 async function sendMail(event) {
@@ -84,6 +96,24 @@ async function sendMail(event) {
     changeButtonStatus(event.target.id);
 
     let mail = mailInput.value;
+
+    // Email verification
+    let errorMessageElement = document.getElementById("emailValidation");
+    if (mail === "") {
+        mailInput.classList.add("is-invalid");
+        errorMessageElement.innerText = "Veuillez entrer un email";
+        changeButtonStatus(event.target.id);
+        return;
+    } else if (REGEX_VALIDATE_EMAIL.exec(mail).length === 0) {
+        mailInput.classList.add("is-invalid");
+        errorMessageElement.innerText = "Ceci n'est pas un email valide";
+        changeButtonStatus(event.target.id);
+        return;
+    } else {
+        if (mailInput.classList.contains("is-invalid")) {
+            mailInput.classList.remove("is-invalid")
+        }
+    }
 
     const data = { "email": mail }
 
@@ -137,8 +167,14 @@ const createCountdown = (hour, minute) => {
     }
 }
 
+const openBrowserWindowOnPlaceFound = async (depNb, centreName) => {
+    await ipcRenderer.invoke("placeFound",
+        CANDILIB_BASE_URL + "?token=" + token, // Link to open
+        CANDILIB_BASE_URL+`/${depNb}/${centreName}/undefinedMonth/undefinedDay/selection/selection-place` // Link to redirect to
+        )
+}
+
 const getInformationCandilib = async () => {
-    // TODO: Update this to work with axios
     let emptyLink = "https://beta.interieur.gouv.fr/candilib/api/v2/candidat/centres?departement=";
 
     let currentTime = DateTime.local().setLocale('fr').setZone(FRENCH_TIME_ZONE);
@@ -157,15 +193,15 @@ const getInformationCandilib = async () => {
     for (const departementNumber of departementsOrder) {
         let response = await axios.get(emptyLink + departementNumber, {headers: generateHeaders(token)});
         for (const dataElement of response.data) {
-            // console.log("Analyzing " + dataElement['centre']['nom'] + " dans le " + dataElement["centre"]["geoDepartement"]);
             if (dataElement['count'] != 0) {
                 popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
+                await openBrowserWindowOnPlaceFound(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']);
             }
             let list = (await axios.get(generateLinkPlaces(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']),
                 {headers: generateHeaders(token)})).data;
             if (list.length > 0) {
                 popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
-                // console.log(list)
+                await openBrowserWindowOnPlaceFound(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']);
             }
         }
     }
@@ -233,7 +269,6 @@ const generateHeaders = (token) => {
 }
 
 async function candilinkclick(event) {
-
     if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
         popUp("Veuillez attendre la fin du chargement avant de cliquer à nouveau sur le bouton", "warning");
         return;
@@ -244,8 +279,6 @@ async function candilinkclick(event) {
     let link = candilinkInput.value;
     let reToken = /token=.*/g;
     token = reToken.exec(link)[0].substr(6);
-
-    const value = await axios.get(link);
 
     let getUserIdLink = 'https://beta.interieur.gouv.fr/candilib/api/v2/auth/candidat/verify-token?token=';
 
@@ -261,8 +294,8 @@ async function candilinkclick(event) {
     let time = me.data['candidat']['visibilityHour'].split('H');
     let hour = time[0], minute = time[1];
 
-    const places = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/places",
-                            {headers: generateHeaders(token)});
+    // const places = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/places",
+    //                         {headers: generateHeaders(token)});
 
     const departementsRequest = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/departements",
         {headers: generateHeaders(token)})
@@ -299,10 +332,12 @@ const loadPreferences = () => {
         if (userStorage.get(el.id)) {
             el.checked = true;
         }
+        if (el.id === "startup-send") {
+            document.getElementById("send-mail").click();
+        }
     }
 
     mailInput.value = userStorage.get("email");
-
 }
 
 const getDepartementsFromHTML = () => {
@@ -365,7 +400,9 @@ ipcRenderer.on('closeEvent', (e) => {
 
     if (saveDepartementsPrefCheckbox.checked) {
         let savedDepartements = getDepartementsFromHTML();
-        userStorage.set("departements", savedDepartements);
+        if (savedDepartements.length > 0) {
+            userStorage.set("departements", savedDepartements);
+        }
     } else {
         userStorage.set("departements", []);
     }
