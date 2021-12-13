@@ -24,6 +24,11 @@ const createWindow = () => {
     win.webContents.openDevTools();
 
     win.loadFile(path.join("src", "index.html"));
+
+    // On close window sends a message to the Renderer
+    win.on("close", (e) => {
+        win.webContents.send("closeEvent");
+    })
 }
 
 app.whenReady().then(() => {

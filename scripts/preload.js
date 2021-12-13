@@ -1,13 +1,14 @@
-const {Builder, By, until} = require('selenium-webdriver');
 const path = require("path");
 const { app } = require('@electron/remote');
 const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
+const { ipcRenderer } = require('electron');
 const open = require('open');
 const axios = require('axios');
 const { v4: uuid } = require('uuid');
 const client_id = uuid() + ".2.12.1-beta1.";
 const { DateTime } = require('luxon');
 const FRENCH_TIME_ZONE = 'Europe/Paris';
+
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -136,8 +137,6 @@ const createCountdown = (hour, minute) => {
     }
 }
 
-console.log(DateTime.local().setLocale('fr').setZone(FRENCH_TIME_ZONE))
-
 const getInformationCandilib = async () => {
     // TODO: Update this to work with axios
     let emptyLink = "https://beta.interieur.gouv.fr/candilib/api/v2/candidat/centres?departement=";
@@ -158,17 +157,18 @@ const getInformationCandilib = async () => {
     for (const departementNumber of departementsOrder) {
         let response = await axios.get(emptyLink + departementNumber, {headers: generateHeaders(token)});
         for (const dataElement of response.data) {
+            // console.log("Analyzing " + dataElement['centre']['nom'] + " dans le " + dataElement["centre"]["geoDepartement"]);
             if (dataElement['count'] != 0) {
                 popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
             }
-            let list = (await axios.get(generateLinkPlaces(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']))).data;
+            let list = (await axios.get(generateLinkPlaces(dataElement['centre']['geoDepartement'], dataElement['centre']['nom']),
+                {headers: generateHeaders(token)})).data;
             if (list.length > 0) {
                 popUp("Possible disponibilités à " + dataElement['centre']['nom'] + " : " + dataElement['count']);
-                console.log(list)
+                // console.log(list)
             }
         }
     }
-
     let browserOpened = false;
 
     if (!browserOpened) {
@@ -281,6 +281,8 @@ async function candilinkclick(event) {
 
     updateDepartements(new_departements);
 
+    console.log(departements);
+
     if (timerIntervalId === null) {
         popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning");
         getInformationCandilib();
@@ -338,7 +340,7 @@ window.addEventListener('DOMContentLoaded', ()=> {
     document.getElementById('send-mail').addEventListener('click', sendMail);
 })
 
-window.addEventListener("beforeunload", () => {
+ipcRenderer.on('closeEvent', (e) => {
     let saveMailCheckbox = document.getElementById('save-mail');
     let sendMailOnStartupCheckbox = document.getElementById('startup-send');
     let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
