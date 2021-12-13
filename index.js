@@ -1,5 +1,6 @@
 const {app, BrowserWindow, Menu, ipcMain, Tray} = require('electron');
 const path = require('path');
+const autoLaunch = require('auto-launch');
 require('@electron/remote/main').initialize();
 
 require('electron-reload')(__dirname);
@@ -8,6 +9,8 @@ let mainWindow;
 let pathToIcon;
 let isQuitting = false;
 let tray = null;
+let appAutoLaunch;
+
 const createWindow = () => {
     mainWindow = new BrowserWindow({
         width:800,
@@ -57,9 +60,13 @@ const createWindow = () => {
 }
 
 app.whenReady().then(() => {
+    appAutoLaunch = new autoLaunch( {
+        name: "candilink",
+        path: app.getPath('exe')
+    })
     Menu.setApplicationMenu(null);
     pathToIcon = path.join(app.getAppPath(), "src", "icons", "favicon-32x32.png");
-    createWindow()
+    createWindow();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -104,4 +111,12 @@ ipcMain.handle('placeFound', (event, candilink, redirect_link) => {
 
 ipcMain.handle('minimize-to-tray', (event, toMinimize) => {
     isQuitting = !toMinimize;
+})
+
+ipcMain.handle('app-on-startup', (e, appOnStartup) => {
+    if (appOnStartup) {
+        appAutoLaunch.enable();
+    } else {
+        appAutoLaunch.disable();
+    }
 })

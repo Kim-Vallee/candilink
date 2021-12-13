@@ -356,15 +356,21 @@ window.addEventListener('DOMContentLoaded', ()=> {
     mailInput = document.getElementById('email');
     let minimizeToTrayInput = document.getElementById("activate-tray");
     let savePrefCheckbox = document.getElementById('save-pref');
+    let startUpCheckbox = document.getElementById('app-on-startup');
 
     // Setup event listeners
     document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
     document.getElementById('send-mail').addEventListener('click', sendMail);
     minimizeToTrayInput.addEventListener("change", (e) => {
         ipcRenderer.invoke("minimize-to-tray", e.target.checked);
+    });
+    startUpCheckbox.addEventListener("change", (e) => {
+        ipcRenderer.invoke("app-on-startup", e.target.checked);
     })
 
     loadPreferences();
+
+    ipcRenderer.invoke("app-on-startup", startUpCheckbox.checked);
 
     if (savePrefCheckbox.checked) {
         let storedDepartements = userStorage.get("departements");
