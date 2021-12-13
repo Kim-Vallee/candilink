@@ -1,11 +1,13 @@
-const {app, BrowserWindow, Menu, ipcMain} = require('electron');
+const {app, BrowserWindow, Menu, ipcMain, Tray} = require('electron');
 const path = require('path');
 require('@electron/remote/main').initialize();
 
 require('electron-reload')(__dirname);
 
 let mainWindow;
-
+let pathToIcon;
+let isQuitting = false;
+let tray = null;
 const createWindow = () => {
     mainWindow = new BrowserWindow({
         width:800,
@@ -29,25 +31,34 @@ const createWindow = () => {
     // On close window sends a message to the Renderer
     mainWindow.on("close", (e) => {
         mainWindow.webContents.send("closeEvent");
+        if (!isQuitting){
+            e.preventDefault();
+            tray = new Tray(pathToIcon);
+            const contextMenu = Menu.buildFromTemplate([
+                { label: "Ouvrir", type: "normal", click: () => {
+                        mainWindow.show();
+                        tray.destroy();
+                    } },
+                { label: "Quitter", type: "normal", click: () => {
+                        isQuitting = true;
+                        mainWindow.close();
+                    } }
+            ])
+            tray.setToolTip('Candilink app.');
+            tray.setContextMenu(contextMenu);
+            tray.on('click', () => {
+                mainWindow.show();
+                tray.destroy();
+            })
+            mainWindow.hide()
+            return false;
+        }
     })
-
-    // win.webContents.setWindowOpenHandler( ({url}) => {
-    //     if (url.startsWith("https://beta.interieur.gouv.fr/candilib/candidat")) {
-    //         return {
-    //             action: 'allow',
-    //             overrideBrowserWindowOptions: {
-    //                 webPreferences: {
-    //                     preload: path.join(app.getAppPath(), "scripts", "redirect_candilib_onload.js") // Redirection script
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     return  {action: "deny"};
-    // } )
 }
 
 app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    pathToIcon = path.join(app.getAppPath(), "src", "icons", "favicon-32x32.png");
     createWindow()
 
     app.on('activate', () => {
@@ -89,4 +100,8 @@ ipcMain.handle('placeFound', (event, candilink, redirect_link) => {
         res = true;
     })
     return res
+})
+
+ipcMain.handle('minimize-to-tray', (event, toMinimize) => {
+    isQuitting = !toMinimize;
 })

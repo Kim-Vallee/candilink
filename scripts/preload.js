@@ -8,21 +8,22 @@ const client_id = uuid() + ".2.12.1-beta1.";
 const { DateTime } = require('luxon');
 const FRENCH_TIME_ZONE = 'Europe/Paris';
 const CANDILIB_BASE_URL = "https://beta.interieur.gouv.fr/candilib/candidat";
-const REGEX_VALIDATE_EMAIL = new RegExp("(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|\"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\\\[\x01-\x09\x0b\x0c\x0e-\x7f])*\")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\\])\n");
-
+const REGEX_VALIDATE_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const DEFAULT_PARAMS_USER_STORAGE = {
+    "email": "",
+    "departements": [],
+    "save-mail": true,
+    "startup-send": true,
+    "save-pref": true,
+    "app-on-startup": true,
+    "activate-tray": true
+}
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
     "</div>";
 
-let userStorage = new Store('user-preferences', {
-        "email": "",
-        "departements": [],
-        "save-mail": true,
-        "startup-send": true,
-        "save-pref": true,
-        "app-on-startup": true
-});
+let userStorage = new Store('user-preferences', DEFAULT_PARAMS_USER_STORAGE);
 
 // Useful elements
 let saveMailCheckbox;
@@ -104,7 +105,7 @@ async function sendMail(event) {
         errorMessageElement.innerText = "Veuillez entrer un email";
         changeButtonStatus(event.target.id);
         return;
-    } else if (REGEX_VALIDATE_EMAIL.exec(mail).length === 0) {
+    } else if (REGEX_VALIDATE_EMAIL.exec(mail) === null) {
         mailInput.classList.add("is-invalid");
         errorMessageElement.innerText = "Ceci n'est pas un email valide";
         changeButtonStatus(event.target.id);
@@ -328,16 +329,14 @@ const loadPreferences = () => {
     let preferenceTable = document.getElementById("preference-table");
     let inputs = preferenceTable.querySelectorAll("tr>td>input");
 
+    mailInput.value = userStorage.get("email");
+
     for (let el of inputs) {
-        if (userStorage.get(el.id)) {
-            el.checked = true;
-        }
-        if (el.id === "startup-send") {
+        el.checked = userStorage.get(el.id);
+        if (el.id === "startup-send" && el.checked) {
             document.getElementById("send-mail").click();
         }
     }
-
-    mailInput.value = userStorage.get("email");
 }
 
 const getDepartementsFromHTML = () => {
@@ -355,7 +354,15 @@ window.addEventListener('DOMContentLoaded', ()=> {
     candilinkButton = document.getElementById('btn-candilink');
     candilinkInput = document.getElementById("candilink");
     mailInput = document.getElementById('email');
+    let minimizeToTrayInput = document.getElementById("activate-tray");
     let savePrefCheckbox = document.getElementById('save-pref');
+
+    // Setup event listeners
+    document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
+    document.getElementById('send-mail').addEventListener('click', sendMail);
+    minimizeToTrayInput.addEventListener("change", (e) => {
+        ipcRenderer.invoke("minimize-to-tray", e.target.checked);
+    })
 
     loadPreferences();
 
@@ -367,30 +374,18 @@ window.addEventListener('DOMContentLoaded', ()=> {
             }
         }
     }
-
-    // Buttons
-
-    document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
-
-    document.getElementById('send-mail').addEventListener('click', sendMail);
 })
 
 ipcRenderer.on('closeEvent', (e) => {
-    let saveMailCheckbox = document.getElementById('save-mail');
-    let sendMailOnStartupCheckbox = document.getElementById('startup-send');
     let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
-    let appStartCheckbox = document.getElementById('app-on-startup');
+    let preferenceTable = document.getElementById("preference-table");
+    let inputs = preferenceTable.querySelectorAll("tr>td>input");
 
-    let saveMailInput = document.getElementById('email');
-
-    const storeValueCheckbox = (element) => {
-        userStorage.set(element.id, element.checked);
+    for (let el of inputs) {
+        userStorage.set(el.id, el.checked);
     }
 
-    storeValueCheckbox(saveMailCheckbox);
-    storeValueCheckbox(sendMailOnStartupCheckbox);
-    storeValueCheckbox(saveDepartementsPrefCheckbox);
-    storeValueCheckbox(appStartCheckbox);
+    let saveMailInput = document.getElementById('email');
 
     if (saveMailCheckbox.checked) {
         userStorage.set(saveMailInput.id, saveMailInput.value)
