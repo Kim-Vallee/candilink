@@ -26,8 +26,8 @@ const createWindow = () => {
     // win.setResizable(false);
     // win.removeMenu();
 
-    // TODO: Remove in prod
-    mainWindow.webContents.openDevTools();
+    // Remove in prod
+    // mainWindow.webContents.openDevTools();
 
     mainWindow.loadFile(path.join("src", "index.html"));
 
@@ -91,15 +91,15 @@ ipcMain.handle('placeFound', (event, candilink, redirect_link) => {
 
     candilibWindow.loadURL(candilink);
 
-    // TODO: remove in prod
-    candilibWindow.webContents.openDevTools();
+    // remove in prod
+    // candilibWindow.webContents.openDevTools();
 
     candilibWindow.webContents.once('did-finish-load', () => {
         candilibWindow.loadURL(redirect_link);
     })
 
     let res;
-    new Promise((resolve, reject) => {
+    new Promise((resolve) => {
         candilibWindow.once('closed', () => {
             resolve(true);
         })
