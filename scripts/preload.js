@@ -4,20 +4,12 @@ const Store = require(path.join(app.getAppPath(), "utils", "Storage"));
 const { ipcRenderer } = require('electron');
 const axios = require('axios');
 const { v4: uuid } = require('uuid');
-const client_id = uuid() + ".2.12.1-beta1.";
 const { DateTime } = require('luxon');
-const FRENCH_TIME_ZONE = 'Europe/Paris';
-const CANDILIB_BASE_URL = "https://beta.interieur.gouv.fr/candilib/candidat";
-const REGEX_VALIDATE_EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const DEFAULT_PARAMS_USER_STORAGE = {
-    "email": "",
-    "departements": [],
-    "save-mail": true,
-    "startup-send": true,
-    "save-pref": true,
-    "app-on-startup": true,
-    "activate-tray": true
-}
+const { parse } = require('node-html-parser');
+import { FRENCH_TIME_ZONE, CANDILIB_BASE_URL, REGEX_VALIDATE_EMAIL, DEFAULT_PARAMS_USER_STORAGE } from './constants';
+
+const client_uuid = uuid();
+let client_id;
 
 const spinnerHTML = "<div class=\"spinner-border text-light\" role=\"status\">\n" +
     "  <span class=\"sr-only\"></span>\n" +
@@ -58,7 +50,7 @@ const fillTime = (time) => {
     }
 }
 
-const popUp = (message, type) => {
+const popUp = (message, type, timeout=2000) => {
     let alertPlaceholder = document.getElementById('liveAlertPlaceholder');
 
     let wrapper = document.createElement("div");
@@ -79,16 +71,17 @@ const popUp = (message, type) => {
 
     alertPlaceholder.appendChild(wrapper);
 
-    // After a timeout the element disappear
-    setTimeout(() => {
-        if (button) {
-            button.click();
-        }
-    }, 2000)
+    if (timeout != null){
+        // After a timeout the element disappear
+        setTimeout(() => {
+            if (button) {
+                button.click();
+            }
+        }, timeout)
+    }
 }
 
 async function sendMail(event) {
-
     if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
         popUp("Veuillez attendre la fin du chargement avant de cliquer à nouveau sur le bouton", "warning");
         return;
@@ -209,7 +202,7 @@ const getInformationCandilib = async () => {
     let browserOpened = false;
 
     if (!browserOpened) {
-        popUp("Aucune place disponible... Il faudra reessayer demain !", "danger");
+        popUp("Aucune place disponible... Il faudra reessayer demain !", "danger", null);
     }
 }
 
@@ -269,7 +262,7 @@ const generateHeaders = (token) => {
     }
 }
 
-async function candilinkclick(event) {
+const candilinkclick = async (event) => {
     if (buttonsLoadingContents.hasOwnProperty(event.target.id)) {
         popUp("Veuillez attendre la fin du chargement avant de cliquer à nouveau sur le bouton", "warning");
         return;
@@ -295,9 +288,6 @@ async function candilinkclick(event) {
     let time = me.data['candidat']['visibilityHour'].split('H');
     let hour = time[0], minute = time[1];
 
-    // const places = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/places",
-    //                         {headers: generateHeaders(token)});
-
     const departementsRequest = await axios.get("https://beta.interieur.gouv.fr/candilib/api/v2/candidat/departements",
         {headers: generateHeaders(token)})
 
@@ -314,8 +304,6 @@ async function candilinkclick(event) {
     }
 
     updateDepartements(new_departements);
-
-    console.log(departements);
 
     if (timerIntervalId === null) {
         popUp("L'application à été lancée après votre heure de passage, analyse rapide", "warning");
@@ -348,38 +336,42 @@ const getDepartementsFromHTML = () => {
     return savedDepartements;
 }
 
-
 window.addEventListener('DOMContentLoaded', ()=> {
-    saveMailCheckbox = document.getElementById("save-mail");
-    candilinkButton = document.getElementById('btn-candilink');
-    candilinkInput = document.getElementById("candilink");
-    mailInput = document.getElementById('email');
-    let minimizeToTrayInput = document.getElementById("activate-tray");
-    let savePrefCheckbox = document.getElementById('save-pref');
-    let startUpCheckbox = document.getElementById('app-on-startup');
+    axios.get("https://github.com/LAB-MI/candilibV2/tags").then((response) => {
+        let parsed_html = parse(response.data);
+        let version = parsed_html.querySelector("[data-test-selector=tag-title] > a").text.trim().substring(1);
+        client_id = client_uuid + "." + version + ".";
+        saveMailCheckbox = document.getElementById("save-mail");
+        candilinkButton = document.getElementById('btn-candilink');
+        candilinkInput = document.getElementById("candilink");
+        mailInput = document.getElementById('email');
+        let minimizeToTrayInput = document.getElementById("activate-tray");
+        let savePrefCheckbox = document.getElementById('save-pref');
+        let startUpCheckbox = document.getElementById('app-on-startup');
 
-    // Setup event listeners
-    document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
-    document.getElementById('send-mail').addEventListener('click', sendMail);
-    minimizeToTrayInput.addEventListener("change", (e) => {
-        ipcRenderer.invoke("minimize-to-tray", e.target.checked);
-    });
-    startUpCheckbox.addEventListener("change", (e) => {
-        ipcRenderer.invoke("app-on-startup", e.target.checked);
-    })
+        // Setup event listeners
+        document.getElementById("btn-candilink").addEventListener('click', candilinkclick);
+        document.getElementById('send-mail').addEventListener('click', sendMail);
+        minimizeToTrayInput.addEventListener("change", (e) => {
+            ipcRenderer.invoke("minimize-to-tray", e.target.checked);
+        });
+        startUpCheckbox.addEventListener("change", (e) => {
+            ipcRenderer.invoke("app-on-startup", e.target.checked);
+        })
 
-    loadPreferences();
+        loadPreferences();
 
-    ipcRenderer.invoke("app-on-startup", startUpCheckbox.checked);
+        ipcRenderer.invoke("app-on-startup", startUpCheckbox.checked);
 
-    if (savePrefCheckbox.checked) {
-        let storedDepartements = userStorage.get("departements");
-        if (storedDepartements.length > 0) {
-            for (const storedDepartement of storedDepartements) {
-                departements.push(storedDepartement);
+        if (savePrefCheckbox.checked) {
+            let storedDepartements = userStorage.get("departements");
+            if (storedDepartements.length > 0) {
+                for (const storedDepartement of storedDepartements) {
+                    departements.push(storedDepartement);
+                }
             }
         }
-    }
+    })
 })
 
 ipcRenderer.on('closeEvent', (e) => {
