@@ -6,7 +6,7 @@ const axios = require('axios');
 const { v4: uuid } = require('uuid');
 const { DateTime } = require('luxon');
 const { parse } = require('node-html-parser');
-import { FRENCH_TIME_ZONE, CANDILIB_BASE_URL, REGEX_VALIDATE_EMAIL, DEFAULT_PARAMS_USER_STORAGE } from './constants';
+const { FRENCH_TIME_ZONE, CANDILIB_BASE_URL, REGEX_VALIDATE_EMAIL, DEFAULT_PARAMS_USER_STORAGE } = require('./constants');
 
 const client_uuid = uuid();
 let client_id;
@@ -374,7 +374,7 @@ window.addEventListener('DOMContentLoaded', ()=> {
     })
 })
 
-ipcRenderer.on('closeEvent', (e) => {
+ipcRenderer.on('closeEvent', () => {
     let saveDepartementsPrefCheckbox = document.getElementById('save-pref');
     let preferenceTable = document.getElementById("preference-table");
     let inputs = preferenceTable.querySelectorAll("tr>td>input");

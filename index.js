@@ -7,13 +7,16 @@ if (handleSquirrelEvent(app)) {
 
 const path = require('path');
 const autoLaunch = require('auto-launch');
+const Store = require('./utils/Storage');
+const {DEFAULT_PARAMS_USER_STORAGE} = require("./scripts/constants");
+let userStorage = new Store('user-preferences', DEFAULT_PARAMS_USER_STORAGE);
 
 require('@electron/remote/main').initialize();
 require('electron-reload')(__dirname);
 
 let mainWindow;
 let pathToIcon;
-let isQuitting = false;
+let isQuitting = userStorage.get('activate-tray');
 let tray = null;
 let appAutoLaunch;
 
@@ -144,7 +147,7 @@ function handleSquirrelEvent(application) {
     const exeName = path.basename(process.execPath);
 
     const spawn = function(command, args) {
-        let spawnedProcess, error;
+        let spawnedProcess;
 
         try {
             spawnedProcess = ChildProcess.spawn(command, args, {
